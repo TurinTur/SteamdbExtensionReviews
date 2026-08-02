@@ -1,0 +1,288 @@
+/* SteamDB Non-Chinese Reviews Extension Styles */
+
+.sdb-non-chinese-container {
+  background: rgba(27, 30, 40, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  color: #c6d4df;
+  transition: all 0.2s ease-in-out;
+  position: relative;
+  overflow: hidden;
+}
+
+.sdb-non-chinese-container::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(180deg, #66c0f4, #1b2838);
+}
+
+.sdb-non-chinese-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sdb-non-chinese-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.sdb-non-chinese-icon {
+  font-size: 18px;
+}
+
+.sdb-non-chinese-badge {
+  background: rgba(102, 192, 244, 0.15);
+  color: #66c0f4;
+  border: 1px solid rgba(102, 192, 244, 0.3);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.sdb-non-chinese-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  text-align: center;
+}
+
+.sdb-stat-card {
+  background: rgba(15, 17, 23, 0.6);
+  padding: 10px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.sdb-stat-label {
+  font-size: 11px;
+  color: #8f98a0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.sdb-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.sdb-stat-value.highlight-pos {
+  color: #66c0f4;
+  text-shadow: 0 0 10px rgba(102, 192, 244, 0.3);
+}
+
+.sdb-stat-value.highlight-neg {
+  color: #c35c2c;
+}
+
+.sdb-stat-subtext {
+  font-size: 11px;
+  color: #8f98a0;
+  margin-top: 2px;
+}
+
+.sdb-bar-container {
+  margin-top: 14px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 4px;
+  height: 8px;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sdb-bar-pos {
+  background: linear-gradient(90deg, #47bfff, #66c0f4);
+  height: 100%;
+  transition: width 0.4s ease;
+}
+
+.sdb-bar-neg {
+  background: linear-gradient(90deg, #c35c2c, #d9534f);
+  height: 100%;
+  transition: width 0.4s ease;
+}
+
+.sdb-comparison-row {
+  margin-top: 10px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #8f98a0;
+  padding: 0 2px;
+}
+
+.sdb-diff-badge {
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  font-size: 11px;
+}
+
+.sdb-diff-positive {
+  background: rgba(92, 126, 16, 0.25);
+  color: #a4d007;
+  border: 1px solid rgba(164, 208, 7, 0.3);
+}
+
+.sdb-diff-negative {
+  background: rgba(195, 92, 44, 0.25);
+  color: #e06c75;
+  border: 1px solid rgba(224, 108, 117, 0.3);
+}
+
+.sdb-diff-neutral {
+  background: rgba(255, 255, 255, 0.1);
+  color: #cccccc;
+}
+
+.sdb-loading-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  border-top-color: #66c0f4;
+  animation: sdb-spin 0.8s linear infinite;
+}
+
+@keyframes sdb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Sales Table Custom Columns & Headers */
+th.sdb-custom-rating-th,
+th.sdb-diff-rating-th {
+  width: 80px !important;
+  max-width: 85px !important;
+  padding: 4px 6px !important;
+  background-color: rgba(102, 192, 244, 0.08) !important;
+  color: #66c0f4 !important;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+th.sdb-custom-rating-th:hover,
+th.sdb-diff-rating-th:hover {
+  background-color: rgba(102, 192, 244, 0.18) !important;
+}
+
+th.sdb-custom-rating-th .dt-column-header,
+th.sdb-diff-rating-th .dt-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+}
+
+th.sdb-custom-rating-th .dt-column-title,
+th.sdb-diff-rating-th .dt-column-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+th.sdb-custom-rating-th .dt-column-order::after,
+th.sdb-diff-rating-th .dt-column-order::after {
+  content: " ⇅";
+  font-size: 10px;
+  opacity: 0.35;
+  display: inline-block;
+  margin-left: 2px;
+}
+
+th.sdb-custom-rating-th.dt-ordering-desc .dt-column-order::after,
+th.sdb-diff-rating-th.dt-ordering-desc .dt-column-order::after {
+  content: " ▼";
+  font-size: 10px;
+  opacity: 0.95;
+  color: #66c0f4;
+}
+
+th.sdb-custom-rating-th.dt-ordering-asc .dt-column-order::after,
+th.sdb-diff-rating-th.dt-ordering-asc .dt-column-order::after {
+  content: " ▲";
+  font-size: 10px;
+  opacity: 0.95;
+  color: #66c0f4;
+}
+
+td.sdb-custom-rating-td,
+td.sdb-diff-rating-td {
+  text-align: center;
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: middle;
+  padding: 4px 6px !important;
+  width: 80px !important;
+  max-width: 85px !important;
+  box-sizing: border-box;
+}
+
+.sdb-table-rating-badge {
+  display: inline-block;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: help;
+  transition: transform 0.1s ease;
+}
+
+.sdb-table-rating-badge:hover {
+  transform: scale(1.05);
+}
+
+.sdb-badge-high {
+  background: rgba(102, 192, 244, 0.2);
+  color: #66c0f4;
+  border: 1px solid rgba(102, 192, 244, 0.4);
+}
+
+.sdb-badge-mid {
+  background: rgba(185, 160, 116, 0.2);
+  color: #b9a074;
+  border: 1px solid rgba(185, 160, 116, 0.4);
+}
+
+.sdb-badge-low {
+  background: rgba(224, 108, 117, 0.2);
+  color: #e06c75;
+  border: 1px solid rgba(224, 108, 117, 0.4);
+}
+
+.sdb-badge-loading {
+  color: #8f98a0;
+  font-weight: 400;
+  font-style: italic;
+  font-size: 11px;
+}

@@ -1,0 +1,173 @@
+/* SteamDB Extension Popup Styles */
+
+body {
+  width: 320px;
+  margin: 0;
+  padding: 0;
+  background-color: #12141d;
+  color: #c6d4df;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  user-select: none;
+}
+
+.popup-container {
+  padding: 14px;
+}
+
+.popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 14px;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-icon {
+  font-size: 18px;
+}
+
+.brand-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.version-tag {
+  font-size: 10px;
+  background: rgba(102, 192, 244, 0.15);
+  color: #66c0f4;
+  padding: 2px 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(102, 192, 244, 0.3);
+}
+
+.section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8f98a0;
+  margin: 12px 0 6px 4px;
+  font-weight: 600;
+}
+
+.section-card {
+  background: rgba(27, 30, 40, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.control-label {
+  display: flex;
+  flex-direction: column;
+}
+
+.control-desc {
+  font-size: 11px;
+  color: #8f98a0;
+  margin-top: 2px;
+}
+
+/* Switch toggle */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(255, 255, 255, 0.15);
+  transition: .3s;
+  border-radius: 22px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .3s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: #66c0f4;
+}
+
+input:checked + .slider:before {
+  transform: translateX(18px);
+}
+
+/* Checkboxes */
+.checkbox-row {
+  margin-bottom: 8px;
+}
+
+.checkbox-row:last-child {
+  margin-bottom: 0;
+}
+
+.checkbox-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.checkbox-container input {
+  accent-color: #66c0f4;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+/* Custom Select */
+.custom-select {
+  background: rgba(15, 17, 23, 0.8);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  outline: none;
+  cursor: pointer;
+}
+
+.custom-select:focus {
+  border-color: #66c0f4;
+}
+
+.popup-footer {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 11px;
+  color: #8f98a0;
+}

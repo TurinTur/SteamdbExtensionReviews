@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SteamDB Non-Chinese Reviews</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="popup-header">
+      <div class="header-brand">
+        <span class="brand-icon">🌐</span>
+        <span class="brand-title">SteamDB Non-Chinese</span>
+      </div>
+      <span class="version-tag">v1.0</span>
+    </div>
+
+    <div class="section-card">
+      <div class="control-row">
+        <div class="control-label">
+          <strong>Enable Extension</strong>
+          <span class="control-desc">Calculate non-Chinese review stats</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggle-enabled" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="section-title">Languages to Exclude</div>
+    <div class="section-card">
+      <div class="checkbox-row">
+        <label class="checkbox-container">
+          <input type="checkbox" id="toggle-schinese" checked>
+          <span class="checkmark"></span>
+          <span>Simplified Chinese (简体中文)</span>
+        </label>
+      </div>
+      <div class="checkbox-row">
+        <label class="checkbox-container">
+          <input type="checkbox" id="toggle-tchinese" checked>
+          <span class="checkmark"></span>
+          <span>Traditional Chinese (繁體中文)</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="section-title">Review Type</div>
+    <div class="section-card">
+      <div class="control-row">
+        <div class="control-label">
+          <strong>Purchase Source</strong>
+          <span class="control-desc">Include keys or Steam purchases only</span>
+        </div>
+        <select id="select-purchase-type" class="custom-select">
+          <option value="all">All Reviews (Keys + Store)</option>
+          <option value="steam">Steam Purchases Only</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="popup-footer">
+      <span id="status-msg">Settings saved automatically</span>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
