@@ -82,6 +82,36 @@ body {
   margin-top: 2px;
 }
 
+.steam-access-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.steam-access-button {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid #66c0f4;
+  border-radius: 4px;
+  background: rgba(102, 192, 244, 0.15);
+  color: #66c0f4;
+  font: inherit;
+  cursor: pointer;
+}
+
+.steam-access-button:hover,
+.steam-access-button:focus-visible {
+  background: rgba(102, 192, 244, 0.3);
+}
+
+.steam-access-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 /* Switch toggle */
 .switch {
   position: relative;

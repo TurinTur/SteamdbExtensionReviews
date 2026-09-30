@@ -12,12 +12,15 @@
   const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hour local cache
   const memoryCache = new Map();
 
-  let settings = {
+  const defaultSettings = {
     enabled: true,
     purchaseType: 'all', // 'all' or 'steam'
     excludeSimplifiedChinese: true,
     excludeTraditionalChinese: true,
   };
+  let settings = { ...defaultSettings };
+  let settingsLoaded = false;
+  let injectionGeneration = 0;
 
   /**
    * Extract Steam AppID from current URL (App detail pages)
@@ -42,7 +45,7 @@
    * Get descriptive review category
    */
   function getReviewCategory(pct, total) {
-    if (total < 10) return { category: 'No User Reviews', emoji: '❓' };
+    if (total < 10) return { category: total === 0 ? 'No User Reviews' : `${total} User Review${total === 1 ? '' : 's'}`, emoji: '❓' };
     if (pct >= 95 && total >= 500) return { category: 'Overwhelmingly Positive', emoji: '🤩' };
     if (pct >= 80) return { category: 'Very Positive', emoji: '😀' };
     if (pct >= 70) return { category: 'Mostly Positive', emoji: '😏' };
@@ -56,51 +59,41 @@
    * Fetch review summary via background script
    */
   function fetchReviewSummary(appId, language, purchaseType) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const message = { action: 'fetchReviews', appId, language, purchaseType };
 
       if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         chrome.runtime.sendMessage(message, (response) => {
           if (chrome.runtime.lastError) {
-            console.warn('[SteamDB Extension] Message error, fallback to direct fetch:', chrome.runtime.lastError);
-            directFetchReviewSummary(appId, language, purchaseType).then(resolve);
-          } else if (response && response.summary) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (response && response.success && response.summary) {
             resolve(response.summary);
           } else {
-            directFetchReviewSummary(appId, language, purchaseType).then(resolve);
+            reject(new Error(response && response.error || 'Steam review request failed'));
           }
         });
       } else {
-        directFetchReviewSummary(appId, language, purchaseType).then(resolve);
+        reject(new Error('Extension background is unavailable. Reload the extension and page.'));
       }
     });
   }
 
   /**
-   * Direct fetch fallback
+   * Fetch all review data and compute non-Chinese stats (with caching)
    */
-  async function directFetchReviewSummary(appId, language, purchaseType) {
-    const url = `https://store.steampowered.com/appreviews/${appId}?json=1&language=${encodeURIComponent(language)}&purchase_type=${encodeURIComponent(purchaseType)}&filter=all`;
-    try {
-      const resp = await fetch(url, { credentials: 'omit' });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      if (data && data.success && data.query_summary) {
-        return data.query_summary;
-      }
-      return { total_positive: 0, total_negative: 0, total_reviews: 0 };
-    } catch (err) {
-      console.warn(`[SteamDB Extension] Direct fetch failed for ${language}:`, err);
-      return { total_positive: 0, total_negative: 0, total_reviews: 0 };
-    }
+  const inFlightPromises = new Map();
+
+  function getStatsCacheKey(appId, reviewSettings = settings) {
+    return `sdb_nc_v2_${appId}_${reviewSettings.purchaseType}_${Number(reviewSettings.excludeSimplifiedChinese)}_${Number(reviewSettings.excludeTraditionalChinese)}`;
   }
 
   /**
    * Fetch all review data and compute non-Chinese stats (with caching)
    */
   async function computeNonChineseStats(appId) {
-    const pType = settings.purchaseType || 'all';
-    const cacheKey = `sdb_nc_${appId}_${pType}`;
+    const reviewSettings = { ...settings };
+    const pType = reviewSettings.purchaseType || 'all';
+    const cacheKey = getStatsCacheKey(appId, reviewSettings);
 
     if (memoryCache.has(cacheKey)) {
       const cached = memoryCache.get(cacheKey);
@@ -109,72 +102,92 @@
       }
     }
 
-    const stored = await getFromStorage(cacheKey);
-    if (stored && (Date.now() - stored.timestamp < CACHE_TTL_MS)) {
-      memoryCache.set(cacheKey, stored);
-      return stored.data;
+    if (inFlightPromises.has(cacheKey)) {
+      return inFlightPromises.get(cacheKey);
     }
 
-    const fetches = [fetchReviewSummary(appId, 'all', pType)];
-
-    if (settings.excludeSimplifiedChinese) {
-      fetches.push(fetchReviewSummary(appId, 'schinese', pType));
-    } else {
-      fetches.push(Promise.resolve({ total_positive: 0, total_negative: 0, total_reviews: 0 }));
-    }
-
-    if (settings.excludeTraditionalChinese) {
-      fetches.push(fetchReviewSummary(appId, 'tchinese', pType));
-    } else {
-      fetches.push(Promise.resolve({ total_positive: 0, total_negative: 0, total_reviews: 0 }));
-    }
-
-    const [allSummary, schSummary, tchSummary] = await Promise.all(fetches);
-
-    const allPos = allSummary.total_positive || 0;
-    const allNeg = allSummary.total_negative || 0;
-
-    const schPos = schSummary.total_positive || 0;
-    const schNeg = schSummary.total_negative || 0;
-
-    const tchPos = tchSummary.total_positive || 0;
-    const tchNeg = tchSummary.total_negative || 0;
-
-    const nonChinesePos = Math.max(0, allPos - schPos - tchPos);
-    const nonChineseNeg = Math.max(0, allNeg - schNeg - tchNeg);
-    const nonChineseTotal = nonChinesePos + nonChineseNeg;
-
-    const nonChinesePct = nonChineseTotal > 0 ? (nonChinesePos / nonChineseTotal) * 100 : 0;
-    const nonChineseSteamDB = calculateSteamDBRating(nonChinesePos, nonChineseNeg);
-
-    const allTotal = allPos + allNeg;
-    const allPct = allTotal > 0 ? (allPos / allTotal) * 100 : 0;
-    const allSteamDB = calculateSteamDBRating(allPos, allNeg);
-
-    const resultData = {
-      all: { pos: allPos, neg: allNeg, total: allTotal, pct: allPct, steamdb: allSteamDB },
-      chinese: {
-        schPos, schNeg, tchPos, tchNeg,
-        totalPos: schPos + tchPos,
-        totalNeg: schNeg + tchNeg,
-        total: schPos + schNeg + tchPos + tchNeg
-      },
-      nonChinese: {
-        pos: nonChinesePos,
-        neg: nonChineseNeg,
-        total: nonChineseTotal,
-        pct: nonChinesePct,
-        steamdb: nonChineseSteamDB,
-        categoryInfo: getReviewCategory(nonChinesePct, nonChineseTotal),
-        diffPct: nonChinesePct - allPct
+    const promise = (async () => {
+      const stored = await getFromStorage(cacheKey);
+      if (stored && (Date.now() - stored.timestamp < CACHE_TTL_MS)) {
+        memoryCache.set(cacheKey, stored);
+        return stored.data;
       }
-    };
 
-    const cachePayload = { timestamp: Date.now(), data: resultData };
-    memoryCache.set(cacheKey, cachePayload);
-    saveToStorage(cacheKey, cachePayload);
+      const fetches = [fetchReviewSummary(appId, 'all', pType)];
 
-    return resultData;
+      if (reviewSettings.excludeSimplifiedChinese) {
+        fetches.push(fetchReviewSummary(appId, 'schinese', pType));
+      } else {
+        fetches.push(Promise.resolve({ total_positive: 0, total_negative: 0, total_reviews: 0 }));
+      }
+
+      if (reviewSettings.excludeTraditionalChinese) {
+        fetches.push(fetchReviewSummary(appId, 'tchinese', pType));
+      } else {
+        fetches.push(Promise.resolve({ total_positive: 0, total_negative: 0, total_reviews: 0 }));
+      }
+
+      const [allSummary, schSummary, tchSummary] = await Promise.all(fetches);
+
+      const allPos = allSummary.total_positive || 0;
+      const allNeg = allSummary.total_negative || 0;
+
+      const schPos = schSummary.total_positive || 0;
+      const schNeg = schSummary.total_negative || 0;
+
+      const tchPos = tchSummary.total_positive || 0;
+      const tchNeg = tchSummary.total_negative || 0;
+
+      const nonChinesePos = allPos - schPos - tchPos;
+      const nonChineseNeg = allNeg - schNeg - tchNeg;
+      if (nonChinesePos < 0 || nonChineseNeg < 0) {
+        throw new Error('Steam returned inconsistent review totals. Try again later.');
+      }
+      const nonChineseTotal = nonChinesePos + nonChineseNeg;
+
+      const nonChinesePct = nonChineseTotal > 0 ? (nonChinesePos / nonChineseTotal) * 100 : 0;
+      const nonChineseSteamDB = calculateSteamDBRating(nonChinesePos, nonChineseNeg);
+
+      const allTotal = allPos + allNeg;
+      const allPct = allTotal > 0 ? (allPos / allTotal) * 100 : 0;
+      const allSteamDB = calculateSteamDBRating(allPos, allNeg);
+
+      const resultData = {
+        excludedLanguages: [
+          reviewSettings.excludeSimplifiedChinese ? 'Simplified Chinese' : null,
+          reviewSettings.excludeTraditionalChinese ? 'Traditional Chinese' : null
+        ].filter(Boolean),
+        all: { pos: allPos, neg: allNeg, total: allTotal, pct: allPct, steamdb: allSteamDB },
+        chinese: {
+          schPos, schNeg, tchPos, tchNeg,
+          totalPos: schPos + tchPos,
+          totalNeg: schNeg + tchNeg,
+          total: schPos + schNeg + tchPos + tchNeg
+        },
+        nonChinese: {
+          pos: nonChinesePos,
+          neg: nonChineseNeg,
+          total: nonChineseTotal,
+          pct: nonChinesePct,
+          steamdb: nonChineseSteamDB,
+          categoryInfo: getReviewCategory(nonChinesePct, nonChineseTotal),
+          diffPct: nonChineseTotal > 0 ? nonChinesePct - allPct : 0
+        }
+      };
+
+      const cachePayload = { timestamp: Date.now(), data: resultData };
+      memoryCache.set(cacheKey, cachePayload);
+      saveToStorage(cacheKey, cachePayload);
+
+      return resultData;
+    })();
+
+    inFlightPromises.set(cacheKey, promise);
+    try {
+      return await promise;
+    } finally {
+      inFlightPromises.delete(cacheKey);
+    }
   }
 
   function getFromStorage(key) {
@@ -208,62 +221,91 @@
     container.className = 'sdb-non-chinese-container';
     container.id = 'sdb-non-chinese-reviews-block';
 
-    const diffFormatted = (nc.diffPct >= 0 ? '+' : '') + nc.diffPct.toFixed(1) + '%';
+    const diffFormatted = nc.total > 0 ? (nc.diffPct >= 0 ? '+' : '') + nc.diffPct.toFixed(1) + '%' : 'N/A';
     const diffClass = nc.diffPct > 0.5 ? 'sdb-diff-positive' : (nc.diffPct < -0.5 ? 'sdb-diff-negative' : 'sdb-diff-neutral');
 
     const posPctStr = (nc.total > 0 ? (nc.pos / nc.total * 100) : 0).toFixed(1);
     const negPctStr = (nc.total > 0 ? (nc.neg / nc.total * 100) : 0).toFixed(1);
 
+    // Use completely static HTML to satisfy Firefox security validators
     container.innerHTML = `
       <div class="sdb-non-chinese-header">
         <div class="sdb-non-chinese-title">
-          <span class="sdb-non-chinese-icon">${nc.categoryInfo.emoji}</span>
+          <span class="sdb-non-chinese-icon"></span>
           <span>Non-Chinese User Reviews</span>
-          <span class="sdb-non-chinese-badge">${nc.categoryInfo.category}</span>
+          <span class="sdb-non-chinese-badge"></span>
         </div>
         <div class="sdb-comparison-row" style="margin: 0;">
-          <span class="sdb-diff-badge ${diffClass}" title="Difference compared to overall Steam rating (${all.pct.toFixed(1)}%)">
-            ${diffFormatted} vs Overall
-          </span>
+          <span class="sdb-diff-badge-header"></span>
         </div>
       </div>
 
       <div class="sdb-non-chinese-grid">
         <div class="sdb-stat-card">
           <div class="sdb-stat-label">Non-Chinese Score</div>
-          <div class="sdb-stat-value highlight-pos">${posPctStr}%</div>
+          <div class="sdb-stat-value sdb-score-val highlight-pos"></div>
           <div class="sdb-stat-subtext">Positive Reviews</div>
         </div>
 
         <div class="sdb-stat-card">
           <div class="sdb-stat-label">SteamDB Rating</div>
-          <div class="sdb-stat-value">${nc.steamdb.toFixed(2)}%</div>
+          <div class="sdb-stat-value sdb-rating-val"></div>
           <div class="sdb-stat-subtext">Adjusted Score</div>
         </div>
 
         <div class="sdb-stat-card">
           <div class="sdb-stat-label">Positive</div>
-          <div class="sdb-stat-value highlight-pos">${nc.pos.toLocaleString()}</div>
-          <div class="sdb-stat-subtext">${posPctStr}% of total</div>
+          <div class="sdb-stat-value sdb-pos-val highlight-pos"></div>
+          <div class="sdb-stat-subtext sdb-pos-subtext"></div>
         </div>
 
         <div class="sdb-stat-card">
           <div class="sdb-stat-label">Negative</div>
-          <div class="sdb-stat-value highlight-neg">${nc.neg.toLocaleString()}</div>
-          <div class="sdb-stat-subtext">${negPctStr}% of total</div>
+          <div class="sdb-stat-value sdb-neg-val highlight-neg"></div>
+          <div class="sdb-stat-subtext sdb-neg-subtext"></div>
         </div>
       </div>
 
-      <div class="sdb-bar-container" title="${nc.pos.toLocaleString()} positive / ${nc.neg.toLocaleString()} negative">
-        <div class="sdb-bar-pos" style="width: ${posPctStr}%"></div>
-        <div class="sdb-bar-neg" style="width: ${negPctStr}%"></div>
+      <div class="sdb-bar-container">
+        <div class="sdb-bar-pos"></div>
+        <div class="sdb-bar-neg"></div>
       </div>
 
       <div class="sdb-comparison-row">
-        <span>Excludes Simplified & Traditional Chinese (${stats.chinese.total.toLocaleString()} reviews filtered)</span>
-        <span><a href="https://store.steampowered.com/app/${appId}/#app_reviews_hash" target="_blank" style="color: #66c0f4; text-decoration: none;">View on Steam ↗</a></span>
+        <span class="sdb-excluded-text"></span>
+        <span><a class="sdb-steam-link" target="_blank" style="color: #66c0f4; text-decoration: none;">View on Steam ↗</a></span>
       </div>
     `;
+
+    // Safely inject dynamic values using textContent/className/style/title
+    container.querySelector('.sdb-non-chinese-icon').textContent = nc.categoryInfo.emoji;
+    container.querySelector('.sdb-non-chinese-badge').textContent = nc.categoryInfo.category;
+
+    const diffBadge = container.querySelector('.sdb-diff-badge-header');
+    diffBadge.className = `sdb-diff-badge ${diffClass}`;
+    diffBadge.title = `Difference compared to overall Steam rating (${all.pct.toFixed(1)}%)`;
+    diffBadge.textContent = nc.total > 0 ? `${diffFormatted} vs Overall` : 'No score to compare';
+
+    container.querySelector('.sdb-score-val').textContent = nc.total > 0 ? `${posPctStr}%` : 'N/A';
+    container.querySelector('.sdb-rating-val').textContent = nc.total > 0 ? `${nc.steamdb.toFixed(2)}%` : 'N/A';
+
+    container.querySelector('.sdb-pos-val').textContent = nc.pos.toLocaleString();
+    container.querySelector('.sdb-pos-subtext').textContent = `${posPctStr}% of total`;
+
+    container.querySelector('.sdb-neg-val').textContent = nc.neg.toLocaleString();
+    container.querySelector('.sdb-neg-subtext').textContent = `${negPctStr}% of total`;
+
+    const barContainer = container.querySelector('.sdb-bar-container');
+    barContainer.title = `${nc.pos.toLocaleString()} positive / ${nc.neg.toLocaleString()} negative`;
+    container.querySelector('.sdb-bar-pos').style.width = `${posPctStr}%`;
+    container.querySelector('.sdb-bar-neg').style.width = `${negPctStr}%`;
+
+    container.querySelector('.sdb-excluded-text').textContent = stats.excludedLanguages.length
+      ? `Excludes ${stats.excludedLanguages.join(' & ')} (${stats.chinese.total.toLocaleString()} reviews filtered)`
+      : 'Includes all review languages';
+
+    const steamLink = container.querySelector('.sdb-steam-link');
+    steamLink.href = `https://store.steampowered.com/app/${appId}/#app_reviews_hash`;
 
     return container;
   }
@@ -291,11 +333,12 @@
   }
 
   async function injectAppPage() {
+    if (!settingsLoaded || !settings.enabled) return;
     const appId = getAppIdFromUrl();
     if (!appId) return;
 
     const existing = document.getElementById('sdb-non-chinese-reviews-block');
-    if (existing && existing.getAttribute('data-loaded') === 'true') return;
+    if (existing && (existing.getAttribute('data-loaded') === 'true' || existing.getAttribute('data-loading') === 'true')) return;
 
     const { target, pos } = findTargetElement();
     if (!target) return;
@@ -319,14 +362,32 @@
       }
     }
 
+    loadingDiv.setAttribute('data-loading', 'true');
+    const generation = injectionGeneration;
     try {
       const stats = await computeNonChineseStats(appId);
+      if (!settings.enabled || generation !== injectionGeneration || !loadingDiv.isConnected) return;
       const newContainer = createStatsContainer(stats, appId);
       newContainer.setAttribute('data-loaded', 'true');
       loadingDiv.replaceWith(newContainer);
     } catch (err) {
+      if (!settings.enabled || generation !== injectionGeneration || !loadingDiv.isConnected) return;
       console.error('[SteamDB Extension] Error rendering stats:', err);
-      loadingDiv.innerHTML = `<span style="color: #e06c75;">Failed to calculate Non-Chinese review stats: ${err.message}</span>`;
+      loadingDiv.setAttribute('data-loading', 'false');
+      loadingDiv.setAttribute('role', 'alert');
+      loadingDiv.classList.add('sdb-review-error');
+      const errorSpan = document.createElement('span');
+      errorSpan.style.color = '#e06c75';
+      errorSpan.textContent = `Failed to calculate Non-Chinese review stats: ${err.message}`;
+      const retryButton = document.createElement('button');
+      retryButton.type = 'button';
+      retryButton.className = 'sdb-review-retry';
+      retryButton.textContent = 'Retry';
+      retryButton.addEventListener('click', () => {
+        loadingDiv.remove();
+        injectAppPage();
+      });
+      loadingDiv.replaceChildren(errorSpan, retryButton);
     }
   }
 
@@ -339,27 +400,42 @@
   const MAX_CONCURRENT_FETCHES = 3;
 
   function queueRowFetch(appId, customTd, diffTd) {
-    fetchQueue.push({ appId, customTd, diffTd });
+    fetchQueue.push({ appId, customTd, diffTd, generation: injectionGeneration });
     processQueue();
   }
 
   function processQueue() {
-    if (activeFetches >= MAX_CONCURRENT_FETCHES || fetchQueue.length === 0) return;
-    const { appId, customTd, diffTd } = fetchQueue.shift();
-    activeFetches++;
+    while (settings.enabled && activeFetches < MAX_CONCURRENT_FETCHES && fetchQueue.length > 0) {
+      const { appId, customTd, diffTd, generation } = fetchQueue.shift();
+      if (generation !== injectionGeneration || !customTd.isConnected || !diffTd.isConnected) continue;
+      activeFetches++;
+      const canRender = () => settings.enabled && generation === injectionGeneration && customTd.isConnected && diffTd.isConnected;
 
-    computeNonChineseStats(appId)
-      .then((stats) => {
-        renderTableCells(customTd, diffTd, stats);
-      })
-      .catch(() => {
-        customTd.innerHTML = `<span class="sdb-badge-loading" style="color: #e06c75;">N/A</span>`;
-        diffTd.innerHTML = `<span class="sdb-badge-loading" style="color: #e06c75;">N/A</span>`;
-      })
-      .finally(() => {
-        activeFetches--;
-        processQueue();
-      });
+      computeNonChineseStats(appId)
+        .then((stats) => {
+          if (canRender()) renderTableCells(customTd, diffTd, stats);
+        })
+        .catch((err) => {
+          if (!canRender()) return;
+          const customSpan = document.createElement('span');
+          customSpan.className = 'sdb-badge-loading';
+          customSpan.style.color = '#e06c75';
+          customSpan.title = err.message;
+          customSpan.textContent = 'N/A';
+          customTd.replaceChildren(customSpan);
+
+          const diffSpan = document.createElement('span');
+          diffSpan.className = 'sdb-badge-loading';
+          diffSpan.style.color = '#e06c75';
+          diffSpan.title = err.message;
+          diffSpan.textContent = 'N/A';
+          diffTd.replaceChildren(diffSpan);
+        })
+        .finally(() => {
+          activeFetches--;
+          processQueue();
+        });
+    }
   }
 
   function renderTableCells(customTd, diffTd, stats) {
@@ -367,8 +443,17 @@
     const all = stats.all;
 
     if (nc.total === 0) {
-      customTd.innerHTML = `<span class="sdb-table-rating-badge sdb-badge-mid" title="No non-Chinese reviews found">N/A</span>`;
-      diffTd.innerHTML = `<span class="sdb-diff-badge sdb-diff-neutral" title="No non-Chinese reviews found">+0.0%</span>`;
+      const customSpan = document.createElement('span');
+      customSpan.className = 'sdb-table-rating-badge sdb-badge-mid';
+      customSpan.title = 'No non-Chinese reviews found';
+      customSpan.textContent = 'N/A';
+      customTd.replaceChildren(customSpan);
+
+      const diffSpan = document.createElement('span');
+      diffSpan.className = 'sdb-diff-badge sdb-diff-neutral';
+      diffSpan.title = 'No non-Chinese reviews found';
+      diffSpan.textContent = 'N/A';
+      diffTd.replaceChildren(diffSpan);
       return;
     }
 
@@ -380,7 +465,11 @@
     else if (pct < 75) badgeClass = 'sdb-badge-mid';
 
     const customTooltip = `Non-Chinese Score: ${pctStr} (${nc.pos.toLocaleString()} pos / ${nc.neg.toLocaleString()} neg)\nOverall: ${all.pct.toFixed(1)}%\nFiltered Chinese Reviews: ${stats.chinese.total.toLocaleString()}`;
-    customTd.innerHTML = `<span class="sdb-table-rating-badge ${badgeClass}" title="${customTooltip}">${pctStr}</span>`;
+    const customSpan = document.createElement('span');
+    customSpan.className = `sdb-table-rating-badge ${badgeClass}`;
+    customSpan.title = customTooltip;
+    customSpan.textContent = pctStr;
+    customTd.replaceChildren(customSpan);
 
     // Render Diff Rating cell
     const diff = nc.diffPct;
@@ -390,7 +479,11 @@
     else if (diff < -0.5) diffClass = 'sdb-diff-negative';
 
     const diffTooltip = `Difference: ${diffFormatted} vs overall score (${all.pct.toFixed(1)}%)\nNon-Chinese: ${pctStr}`;
-    diffTd.innerHTML = `<span class="sdb-diff-badge ${diffClass}" title="${diffTooltip}">${diffFormatted}</span>`;
+    const diffSpan = document.createElement('span');
+    diffSpan.className = `sdb-diff-badge ${diffClass}`;
+    diffSpan.title = diffTooltip;
+    diffSpan.textContent = diffFormatted;
+    diffTd.replaceChildren(diffSpan);
   }
 
   function parseCellValue(td, type) {
@@ -448,6 +541,7 @@
   }
 
   function injectSalesTables() {
+    if (!settingsLoaded || !settings.enabled) return;
     const tables = document.querySelectorAll('table');
     tables.forEach((table) => {
       const thead = table.querySelector('thead');
@@ -457,22 +551,26 @@
       if (headerRows.length === 0) return;
 
       let targetHeaderRow = null;
+      let ratingTh = null;
       let ratingColIdx = -1;
 
       headerRows.forEach((hRow) => {
-        const ths = Array.from(hRow.children);
-        ths.forEach((th, idx) => {
+        // Exclude extension's injected headers to always work against original SteamDB columns
+        const originalThs = Array.from(hRow.children).filter(
+          (th) => !th.classList.contains('sdb-custom-rating-th') && !th.classList.contains('sdb-diff-rating-th')
+        );
+
+        originalThs.forEach((th, idx) => {
           const text = th.textContent.trim();
-          if (text === 'Rating' || text === '%' || text.includes('Rating')) {
+          if (/rating/i.test(text)) {
             ratingColIdx = idx;
+            ratingTh = th;
             targetHeaderRow = hRow;
           }
         });
       });
 
-      if (ratingColIdx === -1 || !targetHeaderRow) return;
-
-      const ratingTh = targetHeaderRow.children[ratingColIdx];
+      if (ratingColIdx === -1 || !targetHeaderRow || !ratingTh) return;
 
       // Insert Custom Rating Header if not present
       let customTh = targetHeaderRow.querySelector('.sdb-custom-rating-th');
@@ -524,15 +622,57 @@
         customTh.after(diffTh);
       }
 
+      // Ensure any secondary header rows also have placeholder headers
+      headerRows.forEach((hRow) => {
+        if (hRow === targetHeaderRow) return;
+        if (hRow.querySelector('.sdb-custom-rating-th')) return;
+
+        const origThs = Array.from(hRow.children).filter(
+          (th) => !th.classList.contains('sdb-custom-rating-th') && !th.classList.contains('sdb-diff-rating-th')
+        );
+        if (origThs.length > ratingColIdx) {
+          const targetTh = origThs[ratingColIdx];
+          const placeholderCustom = document.createElement('th');
+          placeholderCustom.className = 'sdb-custom-rating-th';
+          const placeholderDiff = document.createElement('th');
+          placeholderDiff.className = 'sdb-diff-rating-th';
+          targetTh.after(placeholderCustom);
+          placeholderCustom.after(placeholderDiff);
+        }
+      });
+
+      // Ensure any footer rows have matching placeholders
+      const tfootRows = table.querySelectorAll('tfoot tr');
+      tfootRows.forEach((fRow) => {
+        if (fRow.querySelector('.sdb-custom-rating-td')) return;
+
+        const origTds = Array.from(fRow.children).filter(
+          (td) => !td.classList.contains('sdb-custom-rating-td') && !td.classList.contains('sdb-diff-rating-td')
+        );
+        if (origTds.length > ratingColIdx) {
+          const targetTd = origTds[ratingColIdx];
+          const placeholderCustom = document.createElement('td');
+          placeholderCustom.className = 'sdb-custom-rating-td';
+          const placeholderDiff = document.createElement('td');
+          placeholderDiff.className = 'sdb-diff-rating-td';
+          targetTd.after(placeholderCustom);
+          placeholderCustom.after(placeholderDiff);
+        }
+      });
+
       // Process tbody rows
       const tbodyRows = table.querySelectorAll('tbody tr');
       tbodyRows.forEach((row) => {
         if (row.querySelector('.sdb-custom-rating-td')) return;
 
-        const tds = row.children;
-        if (tds.length <= ratingColIdx) return;
+        // Filter out extension td elements so original SteamDB column indices are preserved
+        const originalTds = Array.from(row.children).filter(
+          (td) => !td.classList.contains('sdb-custom-rating-td') && !td.classList.contains('sdb-diff-rating-td')
+        );
 
-        const ratingTd = tds[ratingColIdx];
+        if (originalTds.length <= ratingColIdx) return;
+
+        const ratingTd = originalTds[ratingColIdx];
 
         let appId = row.getAttribute('data-appid');
         if (!appId) {
@@ -550,14 +690,35 @@
         diffTd.className = 'sdb-diff-rating-td';
 
         if (appId) {
-          customTd.innerHTML = `<span class="sdb-badge-loading">...</span>`;
-          diffTd.innerHTML = `<span class="sdb-badge-loading">...</span>`;
+          const cacheKey = getStatsCacheKey(appId);
+
+          // Fast-path: if data is already in memory cache, render immediately
+          if (memoryCache.has(cacheKey)) {
+            const cached = memoryCache.get(cacheKey);
+            if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
+              renderTableCells(customTd, diffTd, cached.data);
+              ratingTd.after(customTd);
+              customTd.after(diffTd);
+              return;
+            }
+          }
+
+          const customSpan = document.createElement('span');
+          customSpan.className = 'sdb-badge-loading';
+          customSpan.textContent = '...';
+          customTd.replaceChildren(customSpan);
+
+          const diffSpan = document.createElement('span');
+          diffSpan.className = 'sdb-badge-loading';
+          diffSpan.textContent = '...';
+          diffTd.replaceChildren(diffSpan);
+
           ratingTd.after(customTd);
           customTd.after(diffTd);
           queueRowFetch(appId, customTd, diffTd);
         } else {
-          customTd.innerHTML = `-`;
-          diffTd.innerHTML = `-`;
+          customTd.textContent = '-';
+          diffTd.textContent = '-';
           ratingTd.after(customTd);
           customTd.after(diffTd);
         }
@@ -570,11 +731,18 @@
   // ==========================================
 
   function runAllInjections() {
-    if (!settings.enabled) return;
+    if (!settingsLoaded || !settings.enabled) return;
     if (getAppIdFromUrl()) {
       injectAppPage();
     }
     injectSalesTables();
+  }
+
+  function resetInjections() {
+    injectionGeneration++;
+    fetchQueue.length = 0;
+    document.querySelectorAll('#sdb-non-chinese-reviews-block, .sdb-custom-rating-th, .sdb-diff-rating-th, .sdb-custom-rating-td, .sdb-diff-rating-td')
+      .forEach((element) => element.remove());
   }
 
   function loadSettings(callback) {
@@ -594,16 +762,49 @@
   }
 
   loadSettings(() => {
+    settingsLoaded = true;
     runAllInjections();
   });
+
+  const storageEvents = typeof chrome !== 'undefined' && chrome.storage
+    ? chrome.storage.onChanged
+    : typeof browser !== 'undefined' && browser.storage ? browser.storage.onChanged : null;
+  if (storageEvents) {
+    storageEvents.addListener((changes, areaName) => {
+      if (areaName !== 'local') return;
+      let changed = false;
+      for (const key of Object.keys(defaultSettings)) {
+        if (!Object.prototype.hasOwnProperty.call(changes, key)) continue;
+        const value = changes[key].newValue ?? defaultSettings[key];
+        if (value !== settings[key]) {
+          settings[key] = value;
+          changed = true;
+        }
+      }
+      if (changed) {
+        resetInjections();
+        runAllInjections();
+      }
+    });
+  }
+
+  let injectTimer = null;
+  function debouncedInjectSalesTables() {
+    if (injectTimer) clearTimeout(injectTimer);
+    injectTimer = setTimeout(() => {
+      injectTimer = null;
+      injectSalesTables();
+    }, 40);
+  }
 
   let lastPath = window.location.href;
   const observer = new MutationObserver(() => {
     if (window.location.href !== lastPath) {
       lastPath = window.location.href;
+      resetInjections();
       setTimeout(runAllInjections, 300);
     } else {
-      injectSalesTables();
+      debouncedInjectSalesTables();
     }
   });
 

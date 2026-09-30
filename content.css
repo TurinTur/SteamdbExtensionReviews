@@ -26,6 +26,8 @@
 
 .sdb-non-chinese-header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
@@ -35,6 +37,7 @@
 
 .sdb-non-chinese-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   font-size: 15px;
@@ -58,7 +61,7 @@
 
 .sdb-non-chinese-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr));
   gap: 12px;
   text-align: center;
 }
@@ -129,6 +132,8 @@
   margin-top: 10px;
   font-size: 12px;
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
   color: #8f98a0;
@@ -162,6 +167,7 @@
 
 .sdb-loading-spinner {
   display: inline-block;
+  flex-shrink: 0;
   width: 16px;
   height: 16px;
   border: 2px solid rgba(255, 255, 255, 0.2);
@@ -174,6 +180,34 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+.sdb-review-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  overflow-wrap: anywhere;
+}
+
+.sdb-review-error > span {
+  flex: 1 1 240px;
+}
+
+.sdb-review-retry {
+  min-height: 32px;
+  padding: 6px 12px;
+  background: rgba(102, 192, 244, 0.15);
+  border: 1px solid #66c0f4;
+  border-radius: 4px;
+  color: #66c0f4;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sdb-review-retry:hover,
+.sdb-review-retry:focus-visible {
+  background: rgba(102, 192, 244, 0.3);
 }
 
 /* Sales Table Custom Columns & Headers */
